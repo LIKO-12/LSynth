@@ -45,12 +45,29 @@ for i=0, piecesCount-1 do
 	soundDatas[i] = love.sound.newSoundData(pieceSamplesCount, sampleRate, bitDepth, 2)
 end
 
---TODO
-local period = 1
-local freq = 60
-local wv = 3
-local pstep = 1/(sampleRate/freq)
-local panning = 0 --[-1]: Left, [+1]: Right, [0]: Center
+--Fill channelStore
+for i=0, channels-1 do
+	channelStore[i] = {}
+	local chan = channelStore[i]
+	chan.period = 0
+	chan.freq = 440
+	chan.wave = 0
+	chan.amp = 0
+	chan.pstep = 1/(sampleRate/chan.freq)
+	chan.panning = 0 --[-1]: Left, [+1]: Right, [0]: Center
+	chan.period = 0
+end
+
+--== Reusable variables ==--
+local chan = nil
+local panning = 0
+local period = 0
+local wave = 0
+
+local sample = 0
+
+local sampleL = 0 --Holds the sum of all the channels' left output
+local sampleR = 0 --Holds the sum of all the channels' right output
 
 --== Thread Loop ==--
 while true do
@@ -61,21 +78,32 @@ while true do
 
 		--Loop for each sample in this sounddata
 		for j=0, pieceSamplesCount-1 do
-			if period >= 1 then period = period - floor(period) end --Reset the period once it reaches 1
-
-			local sample = 0 --Holds the sum of the all channels
+			sampleL = 0 --Holds the sum of all the channels' left output
+			sampleR = 0 --Holds the sum of all the channels' right output
 
 			for k=0,channels-1 do
-				sample = sample + waveforms[wv](period, k) --Sum the channel value
+				chan = channelStore[k]
+				panning = chan.panning
+				period = chan.period
+				wave = chan.wave
+				
+				if period >= 1 then chan.period = period - floor(period) end --Reset the period once it reaches 1
+				
+				sample = waveforms[wave](period, k) * chan.amp
+				
+				sampleL = sampleL + sample*(1-(panning+1)*0.5)
+				sampleR = sampleR + sample*((panning+1)*0.5)
+				chan.period = period + chan.pstep --Increase the period
 			end
 
-			sample = max(min(sample*baseAmplitude,1),-1) --Apply baseAmplitude and clamp the sum
+			sampleL = max(min(sampleL*baseAmplitude,1),-1) --Apply baseAmplitude and clamp the sum
+			sampleR = max(min(sampleR*baseAmplitude,1),-1) --Apply baseAmplitude and clamp the sum
 
 			--Set the sample
-			soundData:setSample(j,1,sample*(1-(panning+1)*0.5)) --Left
-			soundData:setSample(j,2,sample*((panning+1)*0.5)) --Right
-
-			period = period + pstep --Increase the period
+			soundData:setSample(j,1,sampleL) --Left
+			soundData:setSample(j,2,sampleR) --Right
+			
+			
 		end
 
 		queueableSource:queue(soundData) --Queue the overridden sounddata
